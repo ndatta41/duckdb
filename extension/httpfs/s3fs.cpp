@@ -391,12 +391,6 @@ string S3FileHandle::getMultipartUploadId(const string& filename){
 		parts_uploaded++;
 		part_etags.insert(std::pair<uint16_t, string>(part_no, etag));
 	}
-	// the last part in previous stage may not be of part_size. Removing the last one.
-	// In this step, it will be uploaded with part_size of data or be the last part again.
-	if(parts_uploaded > 0){
-		parts_uploaded--;
-		part_etags.erase(parts_uploaded);
-	}
 	fin.close();
 	return multipartUploadId;
 }
@@ -557,7 +551,8 @@ void S3FileSystem::saveCurrentStateForS3MultipartFinalize(S3FileHandle &file_han
 	string fileName = "/tmp/" + file_handle.path.substr(5);
 	std::ofstream fout(fileName);
 	fout<<file_handle.multipart_upload_id<<std::endl;
-	for(uint16_t i = 0; i < file_handle.parts_uploaded.load(); i++){
+	// The last part no and etag will not be stored as that part may not be of part_size size.
+	for(uint16_t i = 0; i < file_handle.parts_uploaded.load() - 1; i++){
 		fout<<i<<" "<<file_handle.part_etags.at(i)<<std::endl;
 	}
 	fout.flush();
