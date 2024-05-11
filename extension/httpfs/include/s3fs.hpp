@@ -166,6 +166,8 @@ protected:
 	atomic<bool> uploader_has_error {false};
 	std::exception_ptr upload_exception;
 
+	optional_ptr<ClientContext> context;
+
 	void InitializeClient() override;
 
 	//! Rethrow IO Exception originating from an upload thread
@@ -175,7 +177,7 @@ protected:
 		}
 	}
 
-	string getMultipartUploadId(const string& path);
+	string GetMultipartUploadId(const string& path);
 };
 
 class S3FileSystem : public HTTPFileSystem {
@@ -247,11 +249,13 @@ protected:
 	// helper for ReadQueryParams
 	void GetQueryParam(const string &key, string &param, CPPHTTPLIB_NAMESPACE::Params &query_params);
 
-	pair<bool, string> getStatusAndFilenameIfS3MultipartFinalizeIsInProgress(const string& s3_file_path);
+	string GetFileNameInTempDirectory(const string& s3FileLocation);
 
-	void saveCurrentStateForS3MultipartFinalize(S3FileHandle &file_handle);
+	pair<bool, string> GetStatusAndFilenameIfS3MultipartFinalizeIsInProgress(const string& s3_file_path);
 
-	void removeTmpFileIfExist(const string& s3_file_path);
+	void SaveCurrentStateForS3MultipartFinalize(S3FileHandle &file_handle);
+
+	void RemoveTmpFileIfExist(const string& s3_file_path);
 };
 
 // Helper class to do s3 ListObjectV2 api call https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html

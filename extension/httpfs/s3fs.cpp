@@ -16,7 +16,7 @@
 #include <duckdb/main/secret/secret_manager.hpp>
 #include <iostream>
 #include <thread>
-// #include <cstdio>
+#include <regex>
 
 namespace duckdb {
 
@@ -369,20 +369,30 @@ void S3FileHandle::InitializeClient() {
 	http_client = HTTPFileSystem::GetClient(this->http_params, proto_host_port.c_str());
 }
 
-pair<bool, string> S3FileSystem::getStatusAndFilenameIfS3MultipartFinalizeIsInProgress(const string& path){
-	string fileName = path;
-	if(path.find("s3://") != string::npos){
-		fileName = path.substr(5);
-	} else {
-		return make_pair(false, fileName);
+string S3FileSystem::GetFileNameInTempDirectory(const string& s3_fil_location){
+	
+	string file_name = s3_fil_location;
+	if(s3_fil_location.find("s3://") != string::npos){
+		file_name = s3_fil_location.substr(5);
 	}
-	string tmpFileName = "/tmp/"+fileName;
-	std::fstream file(tmpFileName);
-	return make_pair(file.good(), fileName);
+	file_name = std::regex_replace(file_name, std::regex("/"), "-");
+	size_t dot_pos = file_name.find_last_of(".");
+	if(dot_pos != string::npos){
+		file_name = file_name.substr(0, dot_pos);
+	}
+	std::stringstream ss;
+	ss << "/tmp/"<<file_name;
+	return ss.str();
 }
 
-string S3FileHandle::getMultipartUploadId(const string& filename){
-	std::ifstream fin(filename);
+pair<bool, string> S3FileSystem::GetStatusAndFilenameIfS3MultipartFinalizeIsInProgress(const string& path){
+	string file_name = GetFileNameInTempDirectory(path);
+	std::fstream file(file_name);
+	return make_pair(file.good(), file_name);
+}
+
+string S3FileHandle::GetMultipartUploadId(const string& file_name){
+	std::ifstream fin(file_name);
 	string multipartUploadId;
 	fin>>multipartUploadId;
 	idx_t part_no;
@@ -391,6 +401,8 @@ string S3FileHandle::getMultipartUploadId(const string& filename){
 		parts_uploaded++;
 		part_etags.insert(std::pair<uint16_t, string>(part_no, etag));
 	}
+	parts_uploaded--;
+	part_etags.erase(part_no);
 	fin.close();
 	return multipartUploadId;
 }
@@ -399,9 +411,9 @@ string S3FileHandle::getMultipartUploadId(const string& filename){
 
 // Opens the multipart upload and returns the ID
 string S3FileSystem::InitializeMultipartUpload(S3FileHandle &file_handle) {
-	pair<bool, string> s3_multipart_finalize_status_data = getStatusAndFilenameIfS3MultipartFinalizeIsInProgress(file_handle.path);
+	pair<bool, string> s3_multipart_finalize_status_data = GetStatusAndFilenameIfS3MultipartFinalizeIsInProgress(file_handle.path);
 	if(s3_multipart_finalize_status_data.first == true){
-		return file_handle.getMultipartUploadId(s3_multipart_finalize_status_data.second);
+		return file_handle.GetMultipartUploadId(s3_multipart_finalize_status_data.second);
 	}
 	auto &s3fs = (S3FileSystem &)file_handle.file_system;
 
@@ -475,7 +487,7 @@ void S3FileSystem::UploadBuffer(S3FileHandle &file_handle, shared_ptr<S3WriteBuf
 	// Insert etag
 	{
 		unique_lock<mutex> lck(file_handle.part_etags_lock);
-		file_handle.part_etags.insert(std::pair<uint16_t, string>(write_buffer->part_no, etag_lookup->second));
+		file_handle.part_etags.insert(std::pair<uint16_t, string>(write_buffer->part_no, etag_lookup->second.substr(1, etag_lookup->second.length()-2)));
 	}
 
 	file_handle.parts_uploaded++;
@@ -547,32 +559,30 @@ void S3FileSystem::FlushAllBuffers(S3FileHandle &file_handle) {
 	file_handle.RethrowIOError();
 }
 
-void S3FileSystem::saveCurrentStateForS3MultipartFinalize(S3FileHandle &file_handle){
-	string fileName = "/tmp/" + file_handle.path.substr(5);
-	std::ofstream fout(fileName);
-	fout<<file_handle.multipart_upload_id<<std::endl;
-	// The last part no and etag will not be stored as that part may not be of part_size size.
-	for(uint16_t i = 0; i < file_handle.parts_uploaded.load() - 1; i++){
-		fout<<i<<" "<<file_handle.part_etags.at(i)<<std::endl;
+void S3FileSystem::SaveCurrentStateForS3MultipartFinalize(S3FileHandle &file_handle){
+	string file_name = GetFileNameInTempDirectory(file_handle.path);
+	std::ofstream fout(file_name.c_str());
+	std::stringstream ss;
+	ss<<file_handle.multipart_upload_id<<"\n";
+	for(uint16_t i = 0; i < file_handle.parts_uploaded.load(); i++){
+		ss<<i<<" "<<file_handle.part_etags.at(i)<<"\n";
 	}
-	fout.flush();
+	fout<<ss.str();
 	fout.close();
 }
 
-void S3FileSystem::removeTmpFileIfExist(const string& s3_file_path){
-	if(s3_file_path.find("s3://") != string::npos){
-		string tmp_file_name="/tmp/"+s3_file_path.substr(5);
-		std::fstream fs(tmp_file_name);
-		if(fs.good()){
-			fs.close();
-			std::remove(tmp_file_name.c_str());
-		}
+void S3FileSystem::RemoveTmpFileIfExist(const string& s3_file_path){
+	string tmp_file_name=GetFileNameInTempDirectory(s3_file_path);
+	std::fstream fs(tmp_file_name);
+	if(fs.good()){
+		std::remove(tmp_file_name.c_str());
 	}
+	fs.close();
 }
 
 void S3FileSystem::FinalizeMultipartUpload(S3FileHandle &file_handle) {
-	if(!file_handle.s3_multipart_finalize){
-		saveCurrentStateForS3MultipartFinalize(file_handle);
+	if(S3MultipartFinaliseSetting::GetSetting(*file_handle.context.get()).GetValue<bool>() == false){
+		SaveCurrentStateForS3MultipartFinalize(file_handle);
 		return;
 	}
 	auto &s3fs = (S3FileSystem &)file_handle.file_system;
@@ -606,7 +616,7 @@ void S3FileSystem::FinalizeMultipartUpload(S3FileHandle &file_handle) {
 		throw HTTPException(*res, "Unexpected response during S3 multipart upload finalization: %d\n\n%s", res->code,
 		                    result);
 	}
-	removeTmpFileIfExist(file_handle.path);
+	RemoveTmpFileIfExist(file_handle.path);
 }
 
 // Wrapper around the BufferManager::Allocate to that allows limiting the number of buffers that will be handed out
@@ -955,7 +965,7 @@ void S3FileSystem::Verify() {
 
 void S3FileHandle::Initialize(optional_ptr<FileOpener> opener) {
 	HTTPFileHandle::Initialize(opener);
-
+	context = FileOpener::TryGetClientContext(opener);
 	auto &s3fs = file_system.Cast<S3FileSystem>();
 
 	if (flags.OpenForWriting()) {
