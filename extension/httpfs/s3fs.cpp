@@ -398,11 +398,9 @@ string S3FileHandle::GetMultipartUploadId(const string& file_name){
 	idx_t part_no;
 	string etag;
 	while(fin>>part_no>>etag){
-		parts_uploaded++;
+		previously_uploaded_part_count++;
 		part_etags.insert(std::pair<uint16_t, string>(part_no, etag));
 	}
-	parts_uploaded--;
-	part_etags.erase(part_no);
 	fin.close();
 	return multipartUploadId;
 }
@@ -452,12 +450,13 @@ void S3FileSystem::NotifyUploadsInProgress(S3FileHandle &file_handle) {
 void S3FileSystem::UploadBuffer(S3FileHandle &file_handle, shared_ptr<S3WriteBuffer> write_buffer) {
 	auto &s3fs = (S3FileSystem &)file_handle.file_system;
 
-	string query_param = "partNumber=" + to_string(write_buffer->part_no + 1) + "&" +
+	string query_param = "partNumber=" + to_string(file_handle.previously_uploaded_part_count + write_buffer->part_no + 1) + "&" +
 	                     "uploadId=" + S3FileSystem::UrlEncode(file_handle.multipart_upload_id, true);
 	unique_ptr<ResponseWrapper> res;
 	case_insensitive_map_t<string>::iterator etag_lookup;
 
 	try {
+		std::cout<<query_param<<std::endl;
 		res = s3fs.PutRequest(file_handle, file_handle.path, {}, (char *)write_buffer->Ptr(), write_buffer->idx,
 		                      query_param);
 
@@ -487,7 +486,7 @@ void S3FileSystem::UploadBuffer(S3FileHandle &file_handle, shared_ptr<S3WriteBuf
 	// Insert etag
 	{
 		unique_lock<mutex> lck(file_handle.part_etags_lock);
-		file_handle.part_etags.insert(std::pair<uint16_t, string>(write_buffer->part_no, etag_lookup->second.substr(1, etag_lookup->second.length()-2)));
+		file_handle.part_etags.insert(std::pair<uint16_t, string>(write_buffer->part_no + file_handle.previously_uploaded_part_count, etag_lookup->second.substr(1, etag_lookup->second.length()-2)));
 	}
 
 	file_handle.parts_uploaded++;
@@ -564,7 +563,7 @@ void S3FileSystem::SaveCurrentStateForS3MultipartFinalize(S3FileHandle &file_han
 	std::ofstream fout(file_name.c_str());
 	std::stringstream ss;
 	ss<<file_handle.multipart_upload_id<<"\n";
-	for(uint16_t i = 0; i < file_handle.parts_uploaded.load(); i++){
+	for(uint16_t i = 0; i < file_handle.parts_uploaded.load() + file_handle.previously_uploaded_part_count; i++){
 		ss<<i<<" "<<file_handle.part_etags.at(i)<<"\n";
 	}
 	fout<<ss.str();
@@ -585,13 +584,14 @@ void S3FileSystem::FinalizeMultipartUpload(S3FileHandle &file_handle) {
 		SaveCurrentStateForS3MultipartFinalize(file_handle);
 		return;
 	}
+	RemoveTmpFileIfExist(file_handle.path);
 	auto &s3fs = (S3FileSystem &)file_handle.file_system;
 	file_handle.upload_finalized = true;
 
 	std::stringstream ss;
 	ss << "<CompleteMultipartUpload xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">";
 
-	auto parts = file_handle.parts_uploaded.load();
+	auto parts = file_handle.parts_uploaded.load() + file_handle.previously_uploaded_part_count;
 	for (auto i = 0; i < parts; i++) {
 		auto etag_lookup = file_handle.part_etags.find(i);
 		if (etag_lookup == file_handle.part_etags.end()) {
@@ -616,7 +616,6 @@ void S3FileSystem::FinalizeMultipartUpload(S3FileHandle &file_handle) {
 		throw HTTPException(*res, "Unexpected response during S3 multipart upload finalization: %d\n\n%s", res->code,
 		                    result);
 	}
-	RemoveTmpFileIfExist(file_handle.path);
 }
 
 // Wrapper around the BufferManager::Allocate to that allows limiting the number of buffers that will be handed out

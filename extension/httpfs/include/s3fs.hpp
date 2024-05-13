@@ -121,7 +121,7 @@ public:
 	             const S3AuthParams &auth_params_p, const S3ConfigParams &config_params_p)
 	    : HTTPFileHandle(fs, std::move(path_p), flags, http_params), auth_params(auth_params_p),
 	      config_params(config_params_p), uploads_in_progress(0), parts_uploaded(0), upload_finalized(false),
-	      uploader_has_error(false), upload_exception(nullptr), s3_multipart_finalize(true) {
+	      uploader_has_error(false), upload_exception(nullptr), previously_uploaded_part_count(0) {
 		if (flags.OpenForReading() && flags.OpenForWriting()) {
 			throw NotImplementedException("Cannot open an HTTP file for both reading and writing");
 		} else if (flags.OpenForAppending()) {
@@ -142,6 +142,7 @@ public:
 protected:
 	string multipart_upload_id;
 	size_t part_size;
+	size_t previously_uploaded_part_count;
 
 	//! Write buffers for this file
 	mutex write_buffers_lock;
@@ -160,7 +161,6 @@ protected:
 	//! Info for upload
 	atomic<uint16_t> parts_uploaded;
 	bool upload_finalized = true;
-	bool s3_multipart_finalize;
 
 	//! Error handling in upload threads
 	atomic<bool> uploader_has_error {false};
