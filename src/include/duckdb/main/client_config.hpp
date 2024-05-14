@@ -115,6 +115,9 @@ struct ClientConfig {
 	//! Defaults to PhysicalMaterializedCollector
 	get_result_collector_t result_collector = nullptr;
 
+	//! S3 upload will be finalised by default
+	bool s3_multipart_upload = true;
+
 public:
 	static ClientConfig &GetConfig(ClientContext &context);
 	static const ClientConfig &GetConfig(const ClientContext &context);

@@ -806,6 +806,21 @@ Value FileSearchPathSetting::GetSetting(const ClientContext &context) {
 }
 
 //===--------------------------------------------------------------------===//
+// S3 Multipart Finalise
+//===--------------------------------------------------------------------===//
+void S3MultipartFinaliseSetting::ResetLocal(ClientContext &context) {
+	ClientConfig::GetConfig(context).s3_multipart_upload = ClientConfig().s3_multipart_upload;
+}
+
+void S3MultipartFinaliseSetting::SetLocal(ClientContext &context, const Value &input) {
+	ClientConfig::GetConfig(context).s3_multipart_upload = input.GetValue<bool>();
+}
+
+Value S3MultipartFinaliseSetting::GetSetting(const ClientContext &context) {
+	return Value::BOOLEAN(ClientConfig::GetConfig(context).s3_multipart_upload);
+}
+
+//===--------------------------------------------------------------------===//
 // Force Compression
 //===--------------------------------------------------------------------===//
 void ForceCompressionSetting::SetGlobal(DatabaseInstance *db, DBConfig &config, const Value &input) {
