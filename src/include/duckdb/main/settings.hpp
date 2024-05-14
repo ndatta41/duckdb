@@ -607,10 +607,10 @@ struct SearchPathSetting {
 	static Value GetSetting(const ClientContext &context);
 };
 
-
 struct S3MultipartFinaliseSetting {
 	static constexpr const char *Name = "s3_multipart_finalise";
-	static constexpr const char *Description = "Flag to indicate whether to finalise the s3 upload or wait for more upload";
+	static constexpr const char *Description =
+	    "Flag to indicate whether to finalise the s3 upload or wait for more upload";
 	static constexpr const LogicalTypeId InputType = LogicalTypeId::BOOLEAN;
 	static void SetLocal(ClientContext &context, const Value &parameter);
 	static void ResetLocal(ClientContext &context);

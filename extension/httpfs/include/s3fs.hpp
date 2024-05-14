@@ -177,7 +177,7 @@ protected:
 		}
 	}
 
-	string GetMultipartUploadId(const string& path);
+	string GetMultipartUploadId(const string &path);
 };
 
 class S3FileSystem : public HTTPFileSystem {
@@ -249,13 +249,13 @@ protected:
 	// helper for ReadQueryParams
 	void GetQueryParam(const string &key, string &param, CPPHTTPLIB_NAMESPACE::Params &query_params);
 
-	string GetFileNameInTempDirectory(const string& s3FileLocation);
+	string GetFileNameInTempDirectory(const string &s3FileLocation);
 
-	pair<bool, string> GetStatusAndFilenameIfS3MultipartFinalizeIsInProgress(const string& s3_file_path);
+	pair<bool, string> GetStatusAndFilenameIfS3MultipartFinalizeIsInProgress(const string &s3_file_path);
 
 	void SaveCurrentStateForS3MultipartFinalize(S3FileHandle &file_handle);
 
-	void RemoveTmpFileIfExist(const string& s3_file_path);
+	void RemoveTmpFileIfExist(const string &s3_file_path);
 };
 
 // Helper class to do s3 ListObjectV2 api call https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html
